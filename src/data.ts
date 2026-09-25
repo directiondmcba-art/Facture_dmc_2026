@@ -1,4 +1,4 @@
-import type { Company, Database, Document, Expense } from './types';
+import type { Company, Database, Document, Expense, PriceBasis } from './types';
 
 export const COMPANY: Company = {
   name: 'DMC',
@@ -22,8 +22,8 @@ export function normalizeData(parsed: Database): Database {
     clients: parsed.clients.map(client => ({ ...client, billingModel: client.billingModel || 'oneoff', relationshipStatus: client.relationshipStatus || 'client', monthlyStart: client.monthlyStart || '', monthlyEnd: client.monthlyEnd || '', monthlyAmountHt: client.monthlyAmountHt ?? null, billingDay: client.billingDay ?? null })),
     imports: Array.isArray(parsed.imports) ? parsed.imports : [],
     cashEntries: Array.isArray(parsed.cashEntries) ? parsed.cashEntries : [],
-    expenses: Array.isArray(parsed.expenses) ? parsed.expenses : [],
-    recurringExpenses: Array.isArray(parsed.recurringExpenses) ? parsed.recurringExpenses : [],
+    expenses: Array.isArray(parsed.expenses) ? parsed.expenses.map(item => ({ ...item, fundingSource: item.fundingSource === 'personal' ? 'personal' as const : 'company' as const, reimbursements: Array.isArray(item.reimbursements) ? item.reimbursements : [] })) : [],
+    recurringExpenses: Array.isArray(parsed.recurringExpenses) ? parsed.recurringExpenses.map(item => ({ ...item, fundingSource: item.fundingSource === 'personal' ? 'personal' as const : 'company' as const })) : [],
   };
 }
 
@@ -57,7 +57,7 @@ export function expandRecurringExpenses(data: Database, throughMonth = currentMo
       const month = cursor.toISOString().slice(0, 7);
       const occurrenceId = `${rule.id}:${month}`;
       if (known.has(occurrenceId)) continue;
-      additions.push({ id: occurrenceId, date: `${month}-01`, label: rule.label, amount: rule.amount, category: rule.category, paymentMethod: rule.paymentMethod, person: rule.person, note: rule.note, paid: false, recurrenceId: rule.id, month });
+      additions.push({ id: occurrenceId, date: `${month}-01`, label: rule.label, amount: rule.amount, category: rule.category, paymentMethod: rule.paymentMethod, fundingSource: rule.fundingSource || 'company', reimbursements: [], person: rule.person, note: rule.note, paid: false, recurrenceId: rule.id, month });
       known.add(occurrenceId);
     }
   }
@@ -67,9 +67,19 @@ export function expandRecurringExpenses(data: Database, throughMonth = currentMo
 export const id = () => crypto.randomUUID();
 export const money = (value: number) => new Intl.NumberFormat('fr-MA', { maximumFractionDigits: 2 }).format(value) + ' DH';
 export const dateFr = (value: string) => value ? new Intl.DateTimeFormat('fr-FR').format(new Date(`${value}T12:00:00`)) : '—';
-export const subtotal = (doc: Document) => doc.historical && doc.historicalHt != null ? doc.historicalHt : doc.lines.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
-export const vat = (doc: Document) => doc.historical && doc.historicalTtc != null ? doc.historicalTtc - subtotal(doc) : Math.round(subtotal(doc) * doc.vatRate) / 100;
-export const total = (doc: Document) => doc.historical && doc.historicalTtc != null ? doc.historicalTtc : subtotal(doc) + vat(doc);
+const roundMoney = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100;
+export const reimbursedAmount = (expense: Expense) => roundMoney((expense.reimbursements || []).reduce((sum, item) => sum + Number(item.amount || 0), 0));
+export const advanceRemaining = (expense: Expense) => expense.paid && expense.fundingSource === 'personal' ? Math.max(0, roundMoney(expense.amount - reimbursedAmount(expense))) : 0;
+export function priceAmounts(amount: number, basis: PriceBasis, vatRate: number) {
+  const price = Number(amount) || 0;
+  const factor = 1 + (Number(vatRate) || 0) / 100;
+  const ht = basis === 'ttc' ? roundMoney(price / factor) : roundMoney(price);
+  const ttc = basis === 'ttc' ? roundMoney(price) : roundMoney(ht * factor);
+  return { ht, vat: roundMoney(ttc - ht), ttc };
+}
+export const subtotal = (doc: Document) => doc.historical && doc.historicalHt != null ? doc.historicalHt : doc.pricingMode === 'flat' ? priceAmounts(doc.flatPrice || 0, doc.flatPriceBasis || 'ht', doc.vatRate).ht : doc.lines.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+export const total = (doc: Document) => doc.historical && doc.historicalTtc != null ? doc.historicalTtc : doc.pricingMode === 'flat' ? priceAmounts(doc.flatPrice || 0, doc.flatPriceBasis || 'ht', doc.vatRate).ttc : subtotal(doc) + Math.round(subtotal(doc) * doc.vatRate) / 100;
+export const vat = (doc: Document) => roundMoney(total(doc) - subtotal(doc));
 export const paid = (doc: Document) => doc.historical && doc.historicalPaymentStatus === 'paid' ? total(doc) : doc.payments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
 export const remaining = (doc: Document) => Math.max(0, total(doc) - paid(doc));
 export function status(doc: Document): string {

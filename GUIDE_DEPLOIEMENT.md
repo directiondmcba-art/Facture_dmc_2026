@@ -2,6 +2,8 @@
 
 Le ZIP `DMC-CRM-GitHub.zip` contient uniquement le code. Il ne contient ni données clients, ni factures 2026, ni logo, ni cachet, ni mot de passe. Gardez la sauvegarde JSON à part.
 
+La section « Finances à ajouter » utilise les dépenses enregistrées dans le même état JSON que le reste du CRM. Si Supabase est déjà configuré avec `crm_state`, aucune nouvelle requête SQL n’est nécessaire pour cette fonctionnalité.
+
 ## 1. Sauvegarder les données présentes sur ce PC
 
 Dans le CRM local (`http://localhost:4173/`), cliquez sur **Exporter une sauvegarde**. Conservez le fichier JSON dans un emplacement privé. Faites cette opération juste avant la migration : la sauvegarde contient les dernières modifications du navigateur, les factures 2026, le logo et le cachet. Le fichier `private-data/dmc-2026-import.json` est une copie de travail antérieure et peut être moins à jour.
@@ -53,7 +55,9 @@ L’enregistrement cloud est automatique après une modification. Si deux PC mod
 
 ## 6. Exporter une facture en PDF
 
-Créez la facture, renseignez sa référence `FC` suivie de trois chiffres, puis cliquez sur l’icône d’impression de sa ligne. Dans l’aperçu, cliquez sur **Imprimer / PDF** et choisissez **Enregistrer au format PDF** dans la fenêtre d’impression du navigateur. Les devis (`DV` + trois chiffres) et les relevés clients se téléchargent de la même manière.
+Dans **Clients > Modifier**, configurez une fois les prestations, le forfait et la TVA du modèle mensuel. Une nouvelle facture du client reprend ces valeurs. Vérifiez la période facturée ; vous pouvez modifier les prestations ou le prix de cette facture sans changer le modèle. Choisir **Ponctuelle** ouvre une facture libre.
+
+En mode **Forfait global**, saisissez le montant HT ou TTC : l’autre montant et la TVA se calculent automatiquement. Le mode **Prix par ligne** reste disponible. Renseignez manuellement la référence `FC` suivie de trois chiffres, puis cliquez sur l’icône d’impression de la facture. Dans l’aperçu, cliquez sur **Imprimer / PDF** et choisissez **Enregistrer au format PDF** dans la fenêtre d’impression du navigateur. Les devis (`DV` + trois chiffres) et les relevés clients se téléchargent de la même manière.
 
 Pour les factures historiques, le bouton **PDF ↗** ouvre le PDF d’origine dans Drive. Les entrées provisoires sans PDF ne sont pas des documents prêts à envoyer au client.
 

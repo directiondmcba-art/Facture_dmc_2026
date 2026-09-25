@@ -68,11 +68,11 @@ export function DocumentPrint({ doc, client, company }: { doc: Document; client?
       <div className="paper-client"><strong>NOM DU CLIENT : {doc.clientNameSnapshot || client?.name || '—'}</strong><span>ICE : {doc.clientIceSnapshot || client?.ice || '—'}</span><small>{client?.city || 'Casablanca / Maroc'}</small></div>
       <div className="paper-subject"><strong>{doc.category === 'monthly' && doc.periodStart ? `${dateFr(doc.periodStart)} AU ${dateFr(doc.periodEnd)}` : doc.subject}</strong><span>Montants exprimés en MAD (Dirhams Marocains)</span></div>
       <div className="paper-table-wrap">
-        <table className="paper-table"><thead><tr><th>Description</th><th>Qté</th><th>PU HT</th><th>TOTAL HT</th></tr></thead>
-          <tbody>{lines.map(line => <tr key={line.id}><td>{line.description}</td><td>{line.quantity ?? '—'}</td><td>{line.unitPrice === null ? '—' : money(line.unitPrice)}</td><td>{line.amount ? money(line.amount) : '—'}</td></tr>)}</tbody>
+        <table className={`paper-table ${doc.pricingMode === 'flat' ? 'paper-table-flat' : ''}`}><thead><tr><th>Description{doc.pricingMode === 'flat' ? ' des prestations' : ''}</th>{doc.pricingMode !== 'flat' && <><th>Qté</th><th>PU HT</th><th>TOTAL HT</th></>}</tr></thead>
+          <tbody>{lines.map(line => <tr key={line.id}><td>{line.description}</td>{doc.pricingMode !== 'flat' && <><td>{line.quantity ?? '—'}</td><td>{line.unitPrice === null ? '—' : money(line.unitPrice)}</td><td>{line.amount ? money(line.amount) : '—'}</td></>}</tr>)}</tbody>
         </table>
         {index === pages.length - 1 && <div className="paper-totals">
-          <div><strong>Total HT</strong><span>{money(subtotal(doc))}</span></div>
+          <div><strong>{doc.pricingMode === 'flat' ? 'Forfait HT' : 'Total HT'}</strong><span>{money(subtotal(doc))}</span></div>
           <div><strong>TVA {doc.vatRate}%</strong><span>{money(vat(doc))}</span></div>
           <div className="paper-grand-total"><strong>Total à payer</strong><strong>{money(total(doc))}</strong></div>
         </div>}

@@ -1,3 +1,13 @@
+export type PriceBasis = 'ht' | 'ttc';
+export type PricingMode = 'flat' | 'lines';
+export type MonthlyTemplate = {
+  subject: string;
+  descriptions: string[];
+  amount: number;
+  amountBasis: PriceBasis;
+  vatRate: number;
+};
+
 export type Client = {
   id: string;
   name: string;
@@ -14,6 +24,7 @@ export type Client = {
   monthlyEnd: string;
   monthlyAmountHt: number | null;
   billingDay: number | null;
+  monthlyTemplate?: MonthlyTemplate;
 };
 
 export type Line = {
@@ -54,6 +65,9 @@ export type Document = {
   subject: string;
   dueAt: string;
   vatRate: number;
+  pricingMode?: PricingMode;
+  flatPrice?: number;
+  flatPriceBasis?: PriceBasis;
   lines: Line[];
   payments: Payment[];
   paymentVerified: boolean;
@@ -91,7 +105,9 @@ export type CashEntry = { id: string; date: string; amount: number; service: str
 
 export type ExpenseCategory = 'electricity' | 'water' | 'internet' | 'cloud' | 'subscription' | 'office' | 'bonus' | 'other';
 export type PaymentMethod = 'cash' | 'bank' | 'other';
-export type Expense = { id: string; date: string; label: string; amount: number; category: ExpenseCategory; paymentMethod: PaymentMethod; person: string; note: string; paid: boolean; recurrenceId: string; month: string };
-export type RecurringExpense = { id: string; label: string; amount: number; category: ExpenseCategory; paymentMethod: PaymentMethod; person: string; note: string; startMonth: string; endMonth: string };
+export type FundingSource = 'company' | 'personal';
+export type Reimbursement = { id: string; date: string; amount: number; method: PaymentMethod; note: string };
+export type Expense = { id: string; date: string; label: string; amount: number; category: ExpenseCategory; paymentMethod: PaymentMethod; fundingSource: FundingSource; reimbursements: Reimbursement[]; person: string; note: string; paid: boolean; recurrenceId: string; month: string };
+export type RecurringExpense = { id: string; label: string; amount: number; category: ExpenseCategory; paymentMethod: PaymentMethod; fundingSource: FundingSource; person: string; note: string; startMonth: string; endMonth: string };
 
 export type Database = { company: Company; clients: Client[]; documents: Document[]; imports: ImportRow[]; cashEntries: CashEntry[]; expenses: Expense[]; recurringExpenses: RecurringExpense[] };
