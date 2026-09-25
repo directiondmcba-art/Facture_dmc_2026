@@ -39,8 +39,14 @@ export function loadData(): Database {
 }
 
 export function saveData(data: Database) { localStorage.setItem(KEY, JSON.stringify(data)); }
+export function clearData() { localStorage.removeItem(KEY); }
 
-export function expandRecurringExpenses(data: Database, throughMonth = new Date().toISOString().slice(0, 7)): Database {
+export function currentMonth() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+}
+
+export function expandRecurringExpenses(data: Database, throughMonth = currentMonth()): Database {
   const known = new Set(data.expenses.map(item => item.id));
   const additions: Expense[] = [];
   for (const rule of data.recurringExpenses) {
@@ -69,7 +75,8 @@ export const remaining = (doc: Document) => Math.max(0, total(doc) - paid(doc));
 export function status(doc: Document): string {
   if (doc.kind === 'quote') return 'Devis';
   if (doc.historical && doc.historicalPaymentStatus === 'paid') return 'Payée';
-  if (doc.historical && doc.historicalPaymentStatus === 'unknown') return 'À vérifier';
+  if (doc.historical && doc.historicalPaymentStatus === 'unknown' && paid(doc) === 0) return 'À vérifier';
+  if (doc.historical && doc.historicalPaymentStatus === 'unknown') return remaining(doc) <= 0 ? 'Payée' : 'Partielle';
   if (doc.historical && doc.historicalPaymentStatus === 'open' && paid(doc) === 0) return 'En cours';
   if (!doc.paymentVerified) return 'À vérifier';
   if (remaining(doc) <= 0) return 'Payée';

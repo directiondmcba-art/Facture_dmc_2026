@@ -3,7 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import type { User } from '@supabase/supabase-js';
 import type { Dispatch, SetStateAction } from 'react';
 import type { Database } from './types';
-import { normalizeData, seed } from './data';
+import { clearData, normalizeData, seed } from './data';
 
 const url = import.meta.env.VITE_SUPABASE_URL;
 const key = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
@@ -83,7 +83,9 @@ export function useCloudSync(db: Database, setDb: Dispatch<SetStateAction<Databa
   async function signOut() {
     if (!supabase) return;
     if ((blockedRef.current || pendingRef.current && pendingRef.current !== savedRef.current || busyRef.current) && !confirm('Des modifications ne sont pas synchronisées. Exportez une sauvegarde JSON avant de vous déconnecter. Continuer ?')) return;
-    await supabase.auth.signOut(); userRef.current = null; savedRef.current = ''; pendingRef.current = null; blockedRef.current = false;
+    const { error } = await supabase.auth.signOut();
+    if (error) { setMessage(`Déconnexion impossible : ${error.message}`); return; }
+    clearData(); userRef.current = null; savedRef.current = ''; pendingRef.current = null; blockedRef.current = false;
     setDb(structuredClone(seed)); setEmail(''); setMessage(''); setPhase('login');
   }
 

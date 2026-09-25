@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowDownToLine, ArrowLeft, ArrowRight, Banknote, Building2, CalendarDays, Check, ClipboardList, CreditCard, FilePlus2, FileText, LayoutDashboard, Plus, Printer, Receipt, Search, Settings2, Trash2, Upload, Users, Wallet, X } from 'lucide-react';
 import type { CashEntry, Client, Company, Database, Document, Expense, Line, RecurringExpense } from './types';
-import { dateFr, expandRecurringExpenses, id, loadData, money, normalizeData, remaining, saveData, status, subtotal, total, vat } from './data';
+import { currentMonth, dateFr, expandRecurringExpenses, id, loadData, money, normalizeData, remaining, saveData, status, subtotal, total, vat } from './data';
 import { DocumentPrint, StatementPrint } from './Print';
 import { CashPage, ExpensesPage } from './Finance';
 import { CloudGate, useCloudSync } from './cloud';
@@ -119,6 +119,14 @@ export default function App() {
   const cloud = useCloudSync(db, setDb);
   useEffect(() => { if (cloud.phase === 'local' || cloud.phase === 'ready') saveData(db); }, [db, cloud.phase]);
   useEffect(() => { if (cloud.phase === 'local' || cloud.phase === 'ready') setDb(prev => expandRecurringExpenses(prev)); }, [cloud.phase, db.recurringExpenses]);
+  useEffect(() => {
+    if (cloud.phase !== 'local' && cloud.phase !== 'ready') return;
+    const updateMonthlyExpenses = () => setDb(prev => expandRecurringExpenses(prev));
+    window.addEventListener('focus', updateMonthlyExpenses);
+    document.addEventListener('visibilitychange', updateMonthlyExpenses);
+    const timer = window.setInterval(updateMonthlyExpenses, 60_000);
+    return () => { window.removeEventListener('focus', updateMonthlyExpenses); document.removeEventListener('visibilitychange', updateMonthlyExpenses); window.clearInterval(timer); };
+  }, [cloud.phase]);
   const clients = db.clients;
   const invoices = db.documents.filter(d => d.kind === 'invoice');
   const quotes = db.documents.filter(d => d.kind === 'quote');
@@ -127,7 +135,7 @@ export default function App() {
   const shownClients = clients.filter(c => `${c.name} ${c.alias} ${c.ice}`.toLowerCase().includes(search.toLowerCase()));
   const unverified = invoices.filter(d => status(d) === 'À vérifier').length;
   const due = invoices.filter(d => status(d) !== 'À vérifier').reduce((sum, d) => sum + remaining(d), 0);
-  const thisMonth = new Date().toISOString().slice(0, 7);
+  const thisMonth = currentMonth();
   const cashMonth = db.cashEntries.filter(item => item.date.startsWith(thisMonth)).reduce((sum, item) => sum + item.amount, 0);
   const navigate = (next: View) => { setView(next); setSearch(''); setSelectedClientId(null); };
   const updateCompany = (key: keyof Company, val: string) => setDb(prev => ({ ...prev, company: { ...prev.company, [key]: val } }));
@@ -149,7 +157,7 @@ export default function App() {
       if (doc.id !== value.invoiceId && doc.id !== previous?.invoiceId) return doc;
       const payments = doc.payments.filter(payment => payment.id !== `cash-${value.id}`);
       if (doc.id === value.invoiceId) payments.push({ id: `cash-${value.id}`, date: value.date, amount: value.amount, note: `Cash · ${value.service}` });
-      return { ...doc, payments, paymentVerified: true, historicalPaymentStatus: doc.historical && doc.historicalPaymentStatus === 'unknown' ? 'open' : doc.historicalPaymentStatus };
+      return { ...doc, payments, paymentVerified: true };
     }) }));
   };
   const deleteCash = (value: CashEntry) => { if (!confirm(`Supprimer ce paiement cash de ${money(value.amount)} ?`)) return; setDb(prev => ({ ...prev, cashEntries: prev.cashEntries.filter(item => item.id !== value.id), documents: prev.documents.map(doc => doc.id === value.invoiceId ? { ...doc, payments: doc.payments.filter(payment => payment.id !== `cash-${value.id}`) } : doc) })); };
@@ -158,7 +166,7 @@ export default function App() {
   const saveRule = (value: RecurringExpense) => setDb(prev => expandRecurringExpenses({ ...prev, recurringExpenses: prev.recurringExpenses.some(item => item.id === value.id) ? prev.recurringExpenses.map(item => item.id === value.id ? value : item) : [...prev.recurringExpenses, value] }));
   const stopRule = (value: RecurringExpense) => { if (confirm(`Arrêter « ${value.label} » après ${thisMonth} ?`)) setDb(prev => ({ ...prev, recurringExpenses: prev.recurringExpenses.map(item => item.id === value.id ? { ...item, endMonth: thisMonth } : item) })); };
   const openPrint = (target: PrintTarget) => setPrintTarget(target);
-  const downloadBackup = () => { const blob = new Blob([JSON.stringify(db, null, 2)], { type: 'application/json' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `dmc-sauvegarde-${new Date().toISOString().slice(0, 10)}.json`; a.click(); URL.revokeObjectURL(url); };
+  const downloadBackup = () => { const blob = new Blob([JSON.stringify(db, null, 2)], { type: 'application/json' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `dmc-sauvegarde-${new Date().toISOString().slice(0, 10)}.json`; document.body.appendChild(a); a.click(); a.remove(); window.setTimeout(() => URL.revokeObjectURL(url), 30_000); };
   const restoreBackup = async (file?: File) => { if (!file) return; try { const parsed = normalizeData(JSON.parse(await file.text()) as Database); if (confirm(`Remplacer les données ${cloud.phase === 'ready' ? 'cloud' : 'locales'} actuelles par cette sauvegarde ?`)) { setDb(parsed); setSelectedClientId(null); setDialog(null); } } catch { alert('Impossible de lire ce fichier de sauvegarde.'); } if (fileInput.current) fileInput.current.value = ''; };
   const months = useMemo(() => { const set = new Set(invoices.filter(d => d.category === 'monthly' && d.periodStart).map(d => d.periodStart.slice(0, 7))); return set.size; }, [invoices]);
 
@@ -196,7 +204,7 @@ export default function App() {
           {view === 'cash' && <CashPage entries={db.cashEntries} clients={clients} invoices={invoices} onSave={saveCash} onDelete={deleteCash}/>}
           {view === 'expenses' && <ExpensesPage expenses={db.expenses} rules={db.recurringExpenses} onSaveExpense={saveExpense} onDeleteExpense={deleteExpense} onSaveRule={saveRule} onStopRule={stopRule}/>}
           {view === 'imports' && <><div className="page-title-row"><div><div className="eyebrow">Rapprochement des sources</div><h1>Revue 2026</h1><p>Références du tableau rapprochées des PDF Drive. Les factures sans pièce sont visibles comme entrées provisoires.</p></div></div><div className="panel list-panel"><div className="list-toolbar"><div className="search-box"><Search size={18}/><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Référence, client, écart..."/></div><span>{db.imports.filter(r => r.disposition === 'review').length} à contrôler</span></div><div className="table-scroll"><table className="data-table"><thead><tr><th>Réf.</th><th>Client tableau</th><th>Source</th><th>Montant TTC</th><th>Traitement</th><th>Point à vérifier</th></tr></thead><tbody>{db.imports.filter(r => `${r.reference} ${r.rawClient} ${r.reviewReason || ''}`.toLowerCase().includes(search.toLowerCase())).map(r => <tr key={r.id}><td><strong>{r.reference}</strong><small>Ligne {r.sheetRow}</small></td><td>{r.rawClient || '—'}</td><td>{r.sourceUrl ? <a href={r.sourceUrl} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}>PDF Drive ↗</a> : r.sourceFile || 'Tableau seul'}</td><td>{r.amountTtc == null ? '—' : money(r.amountTtc)}</td><td><span className="status">{r.disposition === 'integrated' ? 'Intégrée' : r.disposition === 'excluded' ? 'Écartée' : r.disposition === 'reserved' ? 'Réservée' : 'Provisoire'}</span></td><td>{r.reviewReason || '—'}</td></tr>)}</tbody></table></div></div></>}
-          {view === 'settings' && <><div className="page-title-row"><div><div className="eyebrow">Émetteur des documents</div><h1>Identité DMC</h1><p>Ces informations figurent sur les factures, devis et relevés PDF.</p></div></div><div className="panel settings-panel"><div className="panel-heading"><div><span className="eyebrow">Coordonnées</span><h3>Informations de l’agence</h3></div><span className="autosave">Enregistrement automatique</span></div><div className="settings-grid">{([['name','Nom de l’agence'],['address','Adresse'],['ice','ICE'],['rc','RC'],['if','IF'],['phone','Téléphone'],['email','Email']] as [keyof Company,string][]).map(([key,label]) => <label key={key}>{label}<input value={db.company[key] || ''} onChange={e => updateCompany(key,e.target.value)} /></label>)}</div><div className="asset-settings"><label>Logo DMC (SVG/PNG)<input type="file" accept="image/svg+xml,image/png" onChange={e => uploadCompanyAsset('logoDataUrl', e.target.files?.[0])}/></label>{db.company.logoDataUrl && <img src={db.company.logoDataUrl} alt="Logo DMC"/>}<label>Cachet et signature (SVG/PNG)<input type="file" accept="image/svg+xml,image/png" onChange={e => uploadCompanyAsset('stampDataUrl', e.target.files?.[0])}/></label>{db.company.stampDataUrl && <span>Cachet chargé dans les documents imprimés.</span>}</div><div className="settings-note">Vérifiez les coordonnées avant l’émission d’un document réel. L’export JSON contient également le logo et le cachet ; gardez ce fichier hors de GitHub.</div></div></>}
+          {view === 'settings' && <><div className="page-title-row"><div><div className="eyebrow">Émetteur des documents</div><h1>Identité DMC</h1><p>Ces informations figurent sur les factures, devis et relevés PDF.</p></div><button className="button outline" onClick={downloadBackup}><ArrowDownToLine size={17}/> Télécharger la sauvegarde JSON</button></div><div className="panel settings-panel"><div className="panel-heading"><div><span className="eyebrow">Coordonnées</span><h3>Informations de l’agence</h3></div><span className="autosave">Enregistrement automatique</span></div><div className="settings-grid">{([['name','Nom de l’agence'],['address','Adresse'],['ice','ICE'],['rc','RC'],['if','IF'],['phone','Téléphone'],['email','Email']] as [keyof Company,string][]).map(([key,label]) => <label key={key}>{label}<input value={db.company[key] || ''} onChange={e => updateCompany(key,e.target.value)} /></label>)}</div><div className="asset-settings"><div className="asset-card"><strong>Logo DMC</strong><div className="asset-preview logo-preview">{db.company.logoDataUrl ? <img src={db.company.logoDataUrl} alt="Logo actuel de DMC"/> : <span>Aucun logo enregistré</span>}</div><label>Remplacer le logo (SVG/PNG)<input type="file" accept="image/svg+xml,image/png" onChange={e => uploadCompanyAsset('logoDataUrl', e.target.files?.[0])}/></label></div><div className="asset-card"><strong>Cachet et signature</strong><div className="asset-preview stamp-preview">{db.company.stampDataUrl ? <img src={db.company.stampDataUrl} alt="Cachet et signature actuels de DMC"/> : <span>Aucun cachet enregistré</span>}</div><label>Remplacer le cachet (SVG/PNG)<input type="file" accept="image/svg+xml,image/png" onChange={e => uploadCompanyAsset('stampDataUrl', e.target.files?.[0])}/></label></div></div><div className="settings-note">Les aperçus montrent les fichiers enregistrés. Le champ de sélection affiche « Aucun fichier choisi » après un rechargement, même si le logo ou le cachet est déjà présent. La sauvegarde JSON contient aussi ces deux images : gardez-la hors de GitHub.</div></div></>}
         </div>
       </main>
     </div>
